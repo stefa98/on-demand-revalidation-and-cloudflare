@@ -73,7 +73,7 @@ class Settings {
 			'on_demand_revalidation_default_settings',
 			array(
 				'title' => __( 'General', 'on-demand-revalidation' ),
-			) 
+			)
 		);
 
 		$this->settings_api->register_fields(
@@ -89,7 +89,17 @@ class Settings {
 					'label' => __( 'Revalidate Secret Key', 'on-demand-revalidation' ),
 					'type'  => 'password',
 				),
-			) 
+				array(
+					'name'  => 'cloudflare_zone_id',
+					'label' => __( 'Cloudflare Zone ID', 'on-demand-revalidation' ),
+					'type'  => 'text',
+				),
+				array(
+					'name'  => 'cloudflare_api_token',
+					'label' => __( 'Cloudflare API Token', 'on-demand-revalidation' ),
+					'type'  => 'password',
+				),
+			)
 		);
 
 		$this->settings_api->register_section(
@@ -97,7 +107,7 @@ class Settings {
 			array(
 				'title' => __( 'On post update', 'on-demand-revalidation' ),
 				'desc'  => __( 'On post update is current page revalidated automatically.', 'on-demand-revalidation' ),
-			) 
+			)
 		);
 
 		$this->settings_api->register_fields(
@@ -121,7 +131,7 @@ class Settings {
 					'placeholder' => '/category/%category%',
 					'type'        => 'textarea',
 				),
-			
+
 				array(
 					'name'        => 'revalidate_tags',
 					'label'       => __( 'Tags to revalidate on Post update', 'on-demand-revalidation' ),
@@ -136,7 +146,7 @@ class Settings {
 					'desc'  => '<a id="on-demand-revalidation-post-update-test" class="button button-primary" style="margin-bottom: 15px;">Revalidate Latest Post</a>',
 					'type'  => 'html',
 				),
-			) 
+			)
 		);
 	}
 

@@ -43,7 +43,7 @@ class Revalidation {
 		if ( 'trash' === $data['post_status'] ) {
 			return;
 		}
-		
+
 		$old_permalink = get_permalink( $post_ID );
 		update_post_meta( $post_ID, '_old_permalink', $old_permalink );
 	}
@@ -65,23 +65,23 @@ class Revalidation {
 	 */
 	public static function handle_save_post( $post_id, $post ) {
 		$excluded_statuses = array( 'auto-draft', 'inherit', 'draft', 'trash' );
-		
+
 		if ( isset( $post->post_status ) && in_array( $post->post_status, $excluded_statuses, true ) ) {
 			return;
 		}
-		
+
 		if ( ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) || ( defined( 'DOING_AJAX' ) && DOING_AJAX ) ) {
 			return;
 		}
-	
+
 		if ( false !== wp_is_post_revision( $post_id ) ) {
 			return;
 		}
 
-		if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) { 
-			return; 
+		if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+			return;
 		}
-		
+
 		self::revalidate_post( $post );
 	}
 
@@ -98,7 +98,7 @@ class Revalidation {
 
 			self::revalidate_post( $post );
 		}
-	}   
+	}
 
 	/**
 	 * Revalidates a post.
@@ -147,7 +147,7 @@ class Revalidation {
 
 		if ( ! empty( $old_permalink ) ) {
 			$parse_old_permalink = wp_parse_url( $old_permalink );
-		
+
 			if ( isset( $parse_old_permalink['path'] ) && '/' !== $parse_old_permalink['path'] ) {
 				$old_page_path = substr( $parse_old_permalink['path'], -1 ) === '/' ? substr( $parse_old_permalink['path'], 0, -1 ) : $parse_old_permalink['path'];
 				$paths[]       = $old_page_path;
@@ -157,7 +157,7 @@ class Revalidation {
 		$paths = array_unique( $paths );
 
 		$revalidate_paths = trim( Settings::get( 'revalidate_paths', '', 'on_demand_revalidation_post_update_settings' ) );
-		
+
 		if ( ! empty( $revalidate_paths ) ) {
 			$revalidate_paths = preg_split( '/\r\n|\n|\r/', $revalidate_paths );
 			$revalidate_paths = Helpers::rewrite_placeholders( $revalidate_paths, $post );
@@ -188,11 +188,11 @@ class Revalidation {
 		$data = array(
 			'postId' => $post->ID,
 		);
-	
+
 		if ( ! empty( $paths ) ) {
 			$data['paths'] = $paths;
 		}
-	
+
 		if ( ! empty( $tags ) ) {
 			$data['tags'] = $tags;
 		}
@@ -215,14 +215,68 @@ class Revalidation {
 
 		$response_data = ( ! is_wp_error( $response ) ) ? $body : $response;
 
+		if ( ! $response_data['revalidated'] ) {
+			return new WP_Error( 'revalidate_error', $response['message'], array( 'status' => 403 ) );
+		}
+
+		// Purge Cloudflare cache after successful Next.js revalidation
+		$cloudflare_zone_id = Settings::get( 'cloudflare_zone_id' );
+		$cloudflare_api_token = Settings::get( 'cloudflare_api_token' );
+
+		if ( $cloudflare_zone_id && $cloudflare_api_token ) {
+			$full_urls = array();
+			foreach ( $paths as $path ) {
+				$full_url = rtrim( $frontend_url, '/' ) . $path;
+				$full_urls[] = substr( $full_url, -1 ) === '/' ? $full_url : $full_url . '/';
+			}
+
+			// Add additional paths to purge
+			$additional_paths = array(
+				'/',
+				'/feed.xml',
+				'/feed2.xml',
+				'/atom.xml',
+				'/feed.rss',
+				'/news.xml',
+				'/sitemaps/articles/post-1.xml',
+				'/sitemaps/articles/post-2.xml',
+				'/sitemaps/articles/post-3.xml',
+				'/sitemaps/articles/post-4.xml',
+				'/sitemaps/articles/post-5.xml',
+				'/sitemaps/articles/post-6.xml',
+				'/sitemaps/articles/post-7.xml',
+				'/sitemaps/articles/post-8.xml',
+				'/sitemaps/articles/post-9.xml',
+				'/sitemaps/articles/post-10.xml',
+				'/category/sitemap.xml'
+			);
+
+			foreach ( $additional_paths as $path ) {
+				$full_url = rtrim( $frontend_url, '/' ) . $path;
+				$full_urls[] = $full_url;
+			}
+
+			// Log URLs being revalidated
+			error_log( 'URLs being revalidated: ' . print_r( $full_urls, true ) );
+
+			$cloudflare_response = wp_remote_post(
+				"https://api.cloudflare.com/client/v4/zones/{$cloudflare_zone_id}/purge_cache",
+				array(
+					'headers' => array(
+						'Authorization' => "Bearer {$cloudflare_api_token}",
+						'Content-Type' => 'application/json',
+					),
+					'body' => wp_json_encode( array( 'files' => $full_urls ) ),
+				)
+			);
+
+			if ( is_wp_error( $cloudflare_response ) ) {
+				error_log( 'Cloudflare cache purge failed: ' . $cloudflare_response->get_error_message() );
+			}
+		}
 
 		if ( class_exists( 'CPurgeCache' ) ) {
 			\CPurgeCache\Purge::purge( $post );
-		}
-
-
-		if ( ! $response_data['revalidated'] ) {
-			return new WP_Error( 'revalidate_error', $response['message'], array( 'status' => 403 ) );
 		}
 
 		$revalidated = implode( ', ', $paths );
